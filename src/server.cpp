@@ -7,6 +7,67 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <map>
+#include <sstream>
+
+#define BUFFER_SIZE 1024
+
+struct HTTPResponse{
+  std::string status;
+  std::string content_type;
+  std::map<std::string, std::string> headers;
+  std::string body;
+
+  std::string to_string(){
+    std::string response;
+    response += status + "\r\n";
+    response += "Content-Type: " + content_type + "\r\n";
+    for (const auto& header : headers) {
+      response += header.first + ": " + header.second + "\r\n";
+    }
+    response += "\r\n";
+    response += body;
+    return response;
+  }
+};
+
+struct HTTPRequest {
+  std::string method;
+  std::string path;
+  std::string version;
+  std::map<std::string, std::string> headers;
+  std::string body;
+};
+
+HTTPRequest pase_request(std::string request) {
+  HTTPRequest req;
+  std::stringstream ss(request);
+
+  std::string line;
+  std::getline(ss, line);
+  std::istringstream line_ss(line);
+  line_ss >> req.method >> req.path >> req.version;
+
+  while (std::getline(ss, line) && !line.empty()) {
+    size_t pos = line.find(":");
+    if (pos != std::string::npos) {
+      std::string header_name = line.substr(0, pos);
+      std::string header_value = line.substr(pos + 2);
+      header_value.erase(header_value.end() - 1);
+      req.headers[header_name] = header_value;
+    }
+  }
+
+  std::stringstream body_ss;
+  std::getline(ss, line);
+  body_ss << line;
+  while (std::getline(ss, line)) {
+    body_ss << "\n" << line;
+  }
+  req.body = body_ss.str();
+
+  return req;
+}
 
 int main(int argc, char **argv) {
   // Flush after every std::cout / std::cerr
@@ -70,28 +131,44 @@ int main(int argc, char **argv) {
   std::cout << "Client connected\n";
 
   // ta emot meddelande från client socket.
-  std::string buffer(1024, '\0');
-  if(recv(client_fd, (void *)&buffer[0], sizeof(buffer), 0) < 0) {
+  char buffer[BUFFER_SIZE];
+  if(recv(client_fd, buffer, sizeof(buffer), 0) < 0) {
     std::cerr << "Failed to receive message from client\n";
     return 1;
   }
   std::cout << "Message received\n";
+  std::string message(buffer);
+  HTTPRequest request = pase_request(message);
 
   // write a response
-  std::string response;
-  if(buffer.find("GET / HTTP/1.1\r\n", 0) == 0){
-    response = "HTTP/1.1 200 OK\r\n\r\n";
-  }
-  else if(buffer.find("GET /echo/", 0) == 0){
-    int echo_len = buffer.find(" ", 10) - 10;
-    response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + std::to_string(echo_len) + "\r\n\r\n" + buffer.substr(10, echo_len);
-  }
+  std::string res;
+  if(request.method == "GET") {
+    if(request.path == "/"){
+      HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", {}, "" };
+      res = response.to_string();
+    }
+    else if(request.path.substr(0, 6) == "/echo/"){
+      std::string subStr = request.path.substr(6);
+      HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(subStr.length())} }, subStr };
+      res = response.to_string();
+    }
+    else if(request.path == "/user-agent"){
+      std::string body = request.headers["User-Agent"];
+      HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(body.length())} }, body };
+      res = response.to_string();
+    }
+    else {
+      HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
+      res = response.to_string();
+    }
+  } 
   else {
-    response = "HTTP/1.1 404 Not Found\r\n\r\n";
+    HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
+    res = response.to_string();
   }
- 
+
   // send the response
-  send(client_fd, (void *)&response[0], response.length(), 0);
+  send(client_fd, res.c_str(), res.size(), 0);
   std::cout << "Message sent\n";
 
   // stänger server socket
