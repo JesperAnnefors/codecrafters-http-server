@@ -69,10 +69,26 @@ int main(int argc, char **argv) {
   int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
   std::cout << "Client connected\n";
 
-  // write a 200 response
-  char *msg = "HTTP/1.1 200 OK\r\n\r\n";
-  // send the 200 response
-  send(client_fd, msg, strlen(msg), 0);
+  // ta emot meddelande från client socket.
+  std::string buffer(1024, '\0');
+  if(recv(client_fd, (void *)&buffer[0], sizeof(buffer), 0) < 0) {
+    std::cerr << "Failed to receive message from client\n";
+    return 1;
+  }
+  std::cout << "Message received\n";
+
+  // write a response
+  std::string response;
+  if(buffer.rfind("GET / HTTP/1.1\r\n", 0) == 0){
+    response = "HTTP/1.1 200 OK\r\n\r\n";
+  }
+  else {
+    response = "HTTP/1.1 404 Not Found\r\n\r\n";
+  }
+ 
+  // send the response
+  send(client_fd, (void *)&response[0], sizeof(response), 0);
+  std::cout << "Message sent\n";
 
   // stänger server socket
   close(server_fd);
