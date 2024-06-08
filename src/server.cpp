@@ -79,15 +79,19 @@ int main(int argc, char **argv) {
 
   // write a response
   std::string response;
-  if(buffer.rfind("GET / HTTP/1.1\r\n", 0) == 0){
+  if(buffer.find("GET / HTTP/1.1\r\n", 0) == 0){
     response = "HTTP/1.1 200 OK\r\n\r\n";
+  }
+  else if(buffer.find("GET /echo/", 0) == 0){
+    int echo_len = buffer.find(" ", 10) - 10;
+    response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + std::to_string(echo_len) + "\r\n\r\n" + buffer.substr(10, echo_len);
   }
   else {
     response = "HTTP/1.1 404 Not Found\r\n\r\n";
   }
  
   // send the response
-  send(client_fd, (void *)&response[0], sizeof(response), 0);
+  send(client_fd, (void *)&response[0], response.length(), 0);
   std::cout << "Message sent\n";
 
   // stänger server socket
