@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <map>
 #include <sstream>
+#include <fstream>
 
 #define BUFFER_SIZE 1024
 
@@ -73,6 +74,14 @@ int main(int argc, char **argv) {
   // Flush after every std::cout / std::cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
+
+  std::string dir;
+
+  if (argc == 3 && strcmp(argv[1], "--directory") == 0) {
+  	dir = argv[2];
+  }
+
+  
   
   // socket() system call skapar en socket. returnerar en small integer.
   // första parametern bestämmer vilken communication family som används. I detta fall specificerar AF_INET the IPv4 protocol family.
@@ -126,58 +135,71 @@ int main(int argc, char **argv) {
   
   std::cout << "Waiting for a client to connect...\n";
 
-  pid_t childpid;
   while(1){
 
     // accepterar connection request av en client socket och fyller i client_addr med dess uppgifter.
     int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
     std::cout << "Client connected\n";
 
-    if ((childpid = fork()) == 0) {
-      //stäng server socket id
+    // ta emot meddelande från client socket.
+    char buffer[BUFFER_SIZE];
+    if(recv(client_fd, buffer, sizeof(buffer), 0) < 0) {
+      std::cerr << "Failed to receive message from client\n";
+      close(client_fd);
       close(server_fd);
+      return 1;
+    }
+    std::cout << "Message received\n";
+    std::string message(buffer);
+    HTTPRequest request = pase_request(message);
 
-      // ta emot meddelande från client socket.
-      char buffer[BUFFER_SIZE];
-      if(recv(client_fd, buffer, sizeof(buffer), 0) < 0) {
-        std::cerr << "Failed to receive message from client\n";
-        return 1;
+    // write a response
+    std::string res;
+    if(request.method == "GET") {
+      if(request.path == "/"){
+        HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", {}, "" };
+        res = response.to_string();
       }
-      std::cout << "Message received\n";
-      std::string message(buffer);
-      HTTPRequest request = pase_request(message);
-
-      // write a response
-      std::string res;
-      if(request.method == "GET") {
-        if(request.path == "/"){
-          HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", {}, "" };
-          res = response.to_string();
-        }
-        else if(request.path.substr(0, 6) == "/echo/"){
-          std::string subStr = request.path.substr(6);
-          HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(subStr.length())} }, subStr };
-          res = response.to_string();
-        }
-        else if(request.path == "/user-agent"){
-          std::string body = request.headers["User-Agent"];
-          HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(body.length())} }, body };
+      else if(request.path.substr(0, 6) == "/echo/"){
+        std::string subStr = request.path.substr(6);
+        HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(subStr.length())} }, subStr };
+        res = response.to_string();
+      }
+      else if(request.path == "/user-agent"){
+        std::string body = request.headers["User-Agent"];
+        HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(body.length())} }, body };
+        res = response.to_string();
+      }
+      else if(request.path.substr(0,7) == "/files/"){
+        std::string fileName = request.path.substr(7);
+        std::string fullPath = dir + fileName;
+        std::cout << fullPath << std::endl;
+        std::ifstream ifs;
+        ifs.open(fullPath);
+        if(ifs.good()) {
+          std::stringstream content;
+          content << ifs.rdbuf();
+          HTTPResponse response = { "HTTP/1.1 200 OK", "application/octet-stream", { {"Content-Length", std::to_string(content.str().length())} }, content.str() };
           res = response.to_string();
         }
         else {
           HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
           res = response.to_string();
         }
-      } 
+      }
       else {
         HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
         res = response.to_string();
       }
-
-      // send the response
-      send(client_fd, res.c_str(), res.size(), 0);
-      std::cout << "Message sent\n";
+    } 
+    else {
+      HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
+      res = response.to_string();
     }
+    
+    // send the response
+    send(client_fd, res.c_str(), res.size(), 0);
+    std::cout << "Message sent\n";
   }
 
   // stänger server socket
