@@ -196,7 +196,7 @@ int main(int argc, char **argv) {
         std::ofstream ofs(dir + fileName);
 
         if(ofs.good()) {
-          ofs << request.body;
+          ofs << request.body.substr(0,stoi(request.headers["Content-Length"]));
           HTTPResponse response = { "HTTP/1.1 201 Created", "text/plain", {}, "Created" };
           res = response.to_string();
         }
