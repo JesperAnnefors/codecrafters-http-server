@@ -172,10 +172,8 @@ int main(int argc, char **argv) {
       }
       else if(request.path.substr(0,7) == "/files/"){
         std::string fileName = request.path.substr(7);
-        std::string fullPath = dir + fileName;
-        std::cout << fullPath << std::endl;
-        std::ifstream ifs;
-        ifs.open(fullPath);
+        std::ifstream ifs(dir + fileName);
+
         if(ifs.good()) {
           std::stringstream content;
           content << ifs.rdbuf();
@@ -192,6 +190,26 @@ int main(int argc, char **argv) {
         res = response.to_string();
       }
     } 
+    else if(request.method == "POST") {
+      if(request.path.substr(0,7) == "/files/"){
+        std::string fileName = request.path.substr(7);
+        std::ofstream ofs(dir + fileName);
+
+        if(ofs.good()) {
+          ofs << request.body;
+          HTTPResponse response = { "HTTP/1.1 201 Created", "text/plain", {}, "Created" };
+          res = response.to_string();
+        }
+        else {
+          HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
+          res = response.to_string();
+        }
+      }
+      else {
+        HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
+        res = response.to_string();
+      }
+    }
     else {
       HTTPResponse response = { "HTTP/1.1 404 Not Found", "text/plain", {}, "Not Found" };
       res = response.to_string();
