@@ -40,7 +40,7 @@ struct HTTPRequest {
   std::string body;
 };
 
-HTTPRequest pase_request(std::string request) {
+HTTPRequest parse_request(std::string request) {
   HTTPRequest req;
   std::stringstream ss(request);
 
@@ -68,6 +68,18 @@ HTTPRequest pase_request(std::string request) {
   req.body = body_ss.str();
 
   return req;
+}
+
+HTTPResponse encode(HTTPRequest req) {
+  HTTPResponse res;
+  if(req.headers["Accept-Encoding"] == "gzip"){
+    res = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Encoding", "gzip"} }, "" };
+  }
+  else {
+    res = { "HTTP/1.1 200 OK", "text/plain", {}, "" };
+  }
+
+  return res;
 }
 
 int main(int argc, char **argv) {
@@ -151,7 +163,7 @@ int main(int argc, char **argv) {
     }
     std::cout << "Message received\n";
     std::string message(buffer);
-    HTTPRequest request = pase_request(message);
+    HTTPRequest request = parse_request(message);
 
     // write a response
     std::string res;
@@ -162,7 +174,14 @@ int main(int argc, char **argv) {
       }
       else if(request.path.substr(0, 6) == "/echo/"){
         std::string subStr = request.path.substr(6);
-        HTTPResponse response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(subStr.length())} }, subStr };
+        HTTPResponse response;
+        auto it = request.headers.find("Accept-Encoding");
+        if(it != request.headers.end()){
+          response = encode(request);
+        }
+        else{
+          response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(subStr.length())} }, subStr };
+        }
         res = response.to_string();
       }
       else if(request.path == "/user-agent"){
