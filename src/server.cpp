@@ -10,6 +10,8 @@
 #include <map>
 #include <sstream>
 #include <fstream>
+#include <vector>
+#include <algorithm>
 
 #define BUFFER_SIZE 1024
 
@@ -71,8 +73,21 @@ HTTPRequest parse_request(std::string request) {
 }
 
 HTTPResponse encode(HTTPRequest req) {
+  std::cout << req.headers["Accept-Encoding"] << std::endl;
+  std::stringstream ss(req.headers["Accept-Encoding"]);
+  std::string segment;
+  std::vector<std::string> seglist;
+  std::vector<std::string>::iterator it;
   HTTPResponse res;
-  if(req.headers["Accept-Encoding"] == "gzip"){
+
+  while(std::getline(ss, segment, ','))
+  {
+    segment.erase(std::remove_if(segment.begin(), segment.end(), isspace), segment.end());
+    seglist.push_back(segment);
+  }
+
+  it = find(seglist.begin(), seglist.end(), "gzip");
+  if(it != seglist.end()){
     res = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Encoding", "gzip"} }, "" };
   }
   else {
