@@ -13,6 +13,8 @@
 #include <vector>
 #include <algorithm>
 
+#include <zlib.h>
+
 #define BUFFER_SIZE 1024
 
 struct HTTPResponse{
@@ -72,23 +74,52 @@ HTTPRequest parse_request(std::string request) {
   return req;
 }
 
+std::string compress_string(const std::string& str, int compressionlevel = Z_BEST_COMPRESSION)
+{
+    z_stream zs;                        // z_stream is zlib's control structure
+    memset(&zs, 0, sizeof(zs));
+
+    if (deflateInit(&zs, compressionlevel) != Z_OK)
+        throw(std::runtime_error("deflateInit failed while compressing."));
+
+    zs.next_in = (Bytef*)str.data();
+    zs.avail_in = str.size();           // set the z_stream's input
+
+    int ret;
+    char outbuffer[32768];
+    std::string outstring;
+
+    // retrieve the compressed bytes blockwise
+    do {
+        zs.next_out = reinterpret_cast<Bytef*>(outbuffer);
+        zs.avail_out = sizeof(outbuffer);
+
+        ret = deflate(&zs, Z_FINISH);
+
+        if (outstring.size() < zs.total_out) {
+            // append the block to the output string
+            outstring.append(outbuffer, zs.total_out - outstring.size());
+        }
+    } while (ret == Z_OK);
+
+    deflateEnd(&zs);
+
+    if (ret != Z_STREAM_END) {          // an error occurred that was not EOF
+        std::ostringstream oss;
+        oss << "Exception during zlib compression: (" << ret << ") " << zs.msg;
+        throw(std::runtime_error(oss.str()));
+    }
+
+    return outstring;
+}
+
 HTTPResponse encode(HTTPRequest req) {
-  std::cout << req.headers["Accept-Encoding"] << std::endl;
-  std::stringstream ss(req.headers["Accept-Encoding"]);
-  std::string segment;
-  std::vector<std::string> seglist;
-  std::vector<std::string>::iterator it;
+
   HTTPResponse res;
-
-  while(std::getline(ss, segment, ','))
-  {
-    segment.erase(std::remove_if(segment.begin(), segment.end(), isspace), segment.end());
-    seglist.push_back(segment);
-  }
-
-  it = find(seglist.begin(), seglist.end(), "gzip");
-  if(it != seglist.end()){
-    res = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Encoding", "gzip"} }, "" };
+  if(req.headers["Accept-Encoding"].find("gzip") != std::string::npos){
+    std::string subStr = req.path.substr(6);
+    std::string compSubStr = compress_string(subStr);
+    res = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Encoding", "gzip"}, {"Content-Length", std::to_string(compSubStr.length())} }, compSubStr };
   }
   else {
     res = { "HTTP/1.1 200 OK", "text/plain", {}, "" };
@@ -188,13 +219,14 @@ int main(int argc, char **argv) {
         res = response.to_string();
       }
       else if(request.path.substr(0, 6) == "/echo/"){
-        std::string subStr = request.path.substr(6);
+  
         HTTPResponse response;
         auto it = request.headers.find("Accept-Encoding");
         if(it != request.headers.end()){
           response = encode(request);
         }
         else{
+          std::string subStr = request.path.substr(6);
           response = { "HTTP/1.1 200 OK", "text/plain", { {"Content-Length", std::to_string(subStr.length())} }, subStr };
         }
         res = response.to_string();
